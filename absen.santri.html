@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wab Absen Santri Al Ikhlas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        #video-container {
+            position: relative;
+            width: 100%;
+            max-width: 720px;
+            margin: auto;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        video {
+            width: 100%;
+            height: auto;
+            transform: scaleX(-1); /* Mirror the video feed */
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            transform: scaleX(-1); /* Mirror the canvas to match the video */
+        }
+        .status-box {
+            transition: all 0.3s ease-in-out;
+        }
+        .modal-backdrop {
+            background-color: rgba(0,0,0,0.5);
+        }
+        .toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 16px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: 30px;
+            opacity: 0;
+            transition: opacity 0.5s, visibility 0.5s;
+        }
+        .toast.show {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Container Utama -->
+    <div class="container mx-auto p-4 md:p-6">
+
+        <!-- Tampilan Absensi (Default) -->
+        <div id="absen-view">
+            <header class="text-center mb-6">
+                <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Absensi Wajah Santri</h1>
+                <p class="text-lg text-gray-600">Pondok Pesantren Al-Ikhlas</p>
+            </header>
+
+            <div id="video-container" class="bg-gray-900">
+                <video id="video" autoplay muted playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div id="status-box" class="status-box mt-6 p-4 rounded-lg text-center font-semibold text-lg bg-gray-200">
+                <p id="status-message">Memuat model AI, mohon tunggu...</p>
+            </div>
+            
+            <div class="text-center mt-6">
+                <button onclick="showAdminView()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                    Masuk ke Panel Admin
+                </button>
+            </div>
+        </div>
+
+        <!-- Tampilan Panel Admin (Hidden by default) -->
+        <div id="admin-view" class="hidden">
+            <header class="flex justify-between items-center mb-6">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Panel Admin</h1>
+                    <p class="text-lg text-gray-600">Manajemen & Laporan Absensi</p>
+                </div>
+                <button onclick="showAbsenView()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition-transform transform hover:scale-105">
+                    Kembali ke Absensi
+                </button>
+            </header>
+
+            <!-- Navigasi Tab Admin -->
+            <div class="mb-6 border-b border-gray-300">
+                <nav class="flex space-x-4" aria-label="Tabs">
+                    <button onclick="switchTab('harian')" id="tab-harian" class="tab-button border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Laporan Harian</button>
+                    <button onclick="switchTab('bulanan')" id="tab-bulanan" class="tab-button text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Laporan Bulanan</button>
+                    <button onclick="switchTab('manajemen')" id="tab-manajemen" class="tab-button text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">Manajemen Santri</button>
+                </nav>
+            </div>
+
+            <!-- Konten Tab -->
+            <div id="admin-content">
+                <!-- Laporan Harian -->
+                <div id="content-harian">
+                    <h2 class="text-2xl font-semibold mb-4">Laporan Absensi Harian (<span id="tanggal-hari-ini"></span>)</h2>
+                    <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Santri</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Alamat</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Waktu Absen</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="laporan-harian-body" class="bg-white divide-y divide-gray-200">
+                                <!-- Data akan diisi oleh JavaScript -->
+                                <tr id="harian-placeholder">
+                                    <td colspan="4" class="px-6 py-4 text-center text-gray-500">Belum ada data absensi hari ini.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Laporan Bulanan -->
+                <div id="content-bulanan" class="hidden">
+                    <h2 class="text-2xl font-semibold mb-4">Rekapitulasi Absensi Bulan Ini</h2>
+                    <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Santri</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Kehadiran</th>
+                                </tr>
+                            </thead>
+                            <tbody id="laporan-bulanan-body" class="bg-white divide-y divide-gray-200">
+                                <!-- Data akan diisi oleh JavaScript -->
+                                <tr id="bulanan-placeholder">
+                                    <td colspan="2" class="px-6 py-4 text-center text-gray-500">Belum ada data untuk ditampilkan.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Manajemen Santri -->
+                <div id="content-manajemen" class="hidden">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-2xl font-semibold">Data Santri Terdaftar</h2>
+                        <button onclick="openModal()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg shadow-md">
+                            + Tambah Santri
+                        </button>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow-md overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nama</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Alamat</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manajemen-santri-body" class="bg-white divide-y divide-gray-200">
+                                <!-- Data akan diisi oleh JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Tambah Santri -->
+    <div id="add-santri-modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0" onclick="closeModal()"></div>
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 z-10">
+            <h3 class="text-xl font-semibold mb-4">Daftarkan Santri Baru</h3>
+            <form id="add-santri-form">
+                <div class="mb-4">
+                    <label for="nama" class="block text-sm font-medium text-gray-700 mb-1">Nama Lengkap</label>
+                    <input type="text" id="nama" name="nama" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="Contoh: Abdullah" required>
+                </div>
+                <div class="mb-4">
+                    <label for="alamat" class="block text-sm font-medium text-gray-700 mb-1">Alamat</label>
+                    <input type="text" id="alamat" name="alamat" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="Contoh: Jl. Pesantren No. 10, Jakarta" required>
+                </div>
+                <div class="mb-6">
+                    <label for="foto" class="block text-sm font-medium text-gray-700 mb-1">Upload Foto Wajah</label>
+                    <p class="text-xs text-gray-500 mb-2">PENTING: Upload 1 foto dengan wajah jelas menghadap depan. Ini akan menjadi data acuan sistem.</p>
+                    <input type="file" id="foto" name="foto" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100" accept="image/*" required>
+                </div>
+                <div class="flex justify-end space-x-3">
+                    <button type="button" onclick="closeModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Batal</button>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+
+    <script>
+        // === ELEMEN DOM ===
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const statusMessage = document.getElementById('status-message');
+        const statusBox = document.getElementById('status-box');
+        const absenView = document.getElementById('absen-view');
+        const adminView = document.getElementById('admin-view');
+        const laporanHarianBody = document.getElementById('laporan-harian-body');
+        const laporanBulananBody = document.getElementById('laporan-bulanan-body');
+        const manajemenSantriBody = document.getElementById('manajemen-santri-body');
+        const harianPlaceholder = document.getElementById('harian-placeholder');
+        const bulananPlaceholder = document.getElementById('bulanan-placeholder');
+        const modal = document.getElementById('add-santri-modal');
+        const addSantriForm = document.getElementById('add-santri-form');
+        const toast = document.getElementById('toast');
+
+        // === DATABASE & STATE SIMULASI ===
+        let santriDatabase = [
+            { 
+                name: 'Budi Santoso', 
+                address: 'Jl. Merdeka No. 1, Bandung',
+                imageUrls: ['https://images.pexels.com/photos/220453/pexels-photo-220453.jpeg?auto=compress&cs=tinysrgb&dpr=1&w=500']
+            },
+            { 
+                name: 'Citra Lestari', 
+                address: 'Jl. Pahlawan No. 22, Surabaya', 
+                imageUrls: ['https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg?auto=compress&cs=tinysrgb&dpr=1&w=500']
+            },
+            {
+                name: 'Ahmad Fauzi',
+                address: 'Gg. Damai No. 5, Yogyakarta',
+                imageUrls: ['https://images.pexels.com/photos/1222271/pexels-photo-1222271.jpeg?auto=compress&cs=tinysrgb&dpr=1&w=500']
+            }
+        ];
+
+        let attendanceLog = [];
+        let labeledFaceDescriptors = [];
+        let faceMatcher;
+        let processing = false;
+
+        // === FUNGSI UTAMA ===
+
+        async function initialize() {
+            const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+            try {
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL)
+                ]);
+                
+                statusMessage.textContent = 'Model AI berhasil dimuat. Mengakses kamera...';
+                startVideo();
+                await loadTrainingData();
+                updateAdminTables();
+            } catch (error) {
+                console.error("Gagal memuat model AI:", error);
+                statusMessage.textContent = 'Gagal memuat model AI. Coba refresh halaman.';
+                statusBox.classList.replace('bg-gray-200', 'bg-red-200');
+            }
+        }
+
+        function startVideo() {
+            navigator.mediaDevices.getUserMedia({ video: {} })
+                .then(stream => {
+                    video.srcObject = stream;
+                })
+                .catch(err => {
+                    console.error("Error accessing camera: ", err);
+                    statusMessage.textContent = 'Tidak dapat mengakses kamera. Mohon izinkan akses kamera di browser Anda.';
+                    statusBox.classList.replace('bg-gray-200', 'bg-red-200');
+                });
+        }
+
+        async function loadTrainingData() {
+            statusMessage.textContent = 'Mempelajari data wajah santri...';
+            try {
+                labeledFaceDescriptors = await Promise.all(
+                    santriDatabase.map(async santri => {
+                        const descriptions = [];
+                        for (const imageUrl of santri.imageUrls) {
+                            try {
+                                const img = await faceapi.fetchImage(imageUrl, { crossOrigin: 'anonymous' });
+                                const detections = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                                if (detections) {
+                                    descriptions.push(detections.descriptor);
+                                }
+                            } catch (e) {
+                                console.error(`Gagal memuat atau memproses gambar ${imageUrl} untuk ${santri.name}`, e);
+                            }
+                        }
+                        if (descriptions.length > 0) {
+                            return new faceapi.LabeledFaceDescriptors(santri.name, descriptions);
+                        }
+                        return null;
+                    })
+                );
+                
+                labeledFaceDescriptors = labeledFaceDescriptors.filter(d => d !== null);
+
+                if (labeledFaceDescriptors.length === 0) {
+                    throw new Error("Tidak ada data wajah yang bisa dipelajari.");
+                }
+
+                faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.55);
+                statusMessage.textContent = 'Arahkan wajah Anda ke kamera untuk absensi.';
+                statusBox.classList.replace('bg-gray-200', 'bg-blue-200');
+            } catch (error) {
+                console.error("Gagal memuat data training:", error);
+                statusMessage.textContent = `Gagal memproses data wajah: ${error.message}. Silakan hubungi admin.`;
+                statusBox.classList.replace('bg-gray-200', 'bg-red-200');
+            }
+        }
+
+        video.addEventListener('play', () => {
+            const displaySize = { width: video.clientWidth, height: video.clientHeight };
+            faceapi.matchDimensions(canvas, displaySize);
+
+            setInterval(async () => {
+                if (processing || !faceMatcher) return;
+
+                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+                if (resizedDetections.length > 0) {
+                    const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
+                    results.forEach((result, i) => {
+                        const box = resizedDetections[i].detection.box;
+                        const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString() });
+                        drawBox.draw(canvas);
+
+                        if (result.label !== 'unknown') {
+                            handleSuccessfulAbsen(result.label);
+                        } else {
+                            statusMessage.textContent = 'Wajah tidak dikenali. Pastikan Anda terdaftar.';
+                            statusBox.classList.replace('bg-green-200', 'bg-yellow-200');
+                        }
+                    });
+                } else {
+                    statusMessage.textContent = 'Arahkan wajah Anda ke kamera untuk absensi.';
+                    statusBox.classList.replace('bg-green-200', 'bg-blue-200');
+                    statusBox.classList.replace('bg-yellow-200', 'bg-blue-200');
+                }
+            }, 500);
+        });
+
+        function handleSuccessfulAbsen(name) {
+            if (processing) return;
+
+            const today = new Date().toLocaleDateString('id-ID');
+            const alreadyAttended = attendanceLog.some(log => log.name === name && new Date(log.time).toLocaleDateString('id-ID') === today);
+
+            if (alreadyAttended) {
+                statusMessage.textContent = `${name}, Anda sudah melakukan absensi hari ini.`;
+                statusBox.classList.replace('bg-blue-200', 'bg-yellow-200');
+                return;
+            }
+
+            processing = true;
+            const santriData = santriDatabase.find(s => s.name === name);
+            if (!santriData) {
+                processing = false;
+                return;
+            }
+
+            const now = new Date();
+            attendanceLog.push({
+                name: santriData.name,
+                address: santriData.address,
+                time: now
+            });
+
+            statusMessage.textContent = `Absen Berhasil! Selamat datang, ${name}.`;
+            statusBox.classList.replace('bg-blue-200', 'bg-green-200');
+            statusBox.classList.replace('bg-yellow-200', 'bg-green-200');
+            
+            updateAdminTables();
+
+            setTimeout(() => {
+                processing = false;
+                statusMessage.textContent = 'Arahkan wajah Anda ke kamera untuk absensi.';
+                statusBox.classList.replace('bg-green-200', 'bg-blue-200');
+            }, 5000);
+        }
+
+        // === FUNGSI UI & ADMIN ===
+
+        function showAbsenView() {
+            adminView.classList.add('hidden');
+            absenView.classList.remove('hidden');
+        }
+
+        function showAdminView() {
+            absenView.classList.add('hidden');
+            adminView.classList.remove('hidden');
+            updateAdminTables();
+        }
+
+        function switchTab(tabName) {
+            document.getElementById('content-harian').classList.add('hidden');
+            document.getElementById('content-bulanan').classList.add('hidden');
+            document.getElementById('content-manajemen').classList.add('hidden');
+            
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('border-indigo-500', 'text-indigo-600');
+                button.classList.add('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+            });
+
+            document.getElementById(`content-${tabName}`).classList.remove('hidden');
+            
+            const activeTab = document.getElementById(`tab-${tabName}`);
+            activeTab.classList.add('border-indigo-500', 'text-indigo-600');
+            activeTab.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        }
+
+        function updateAdminTables() {
+            updateLaporanHarian();
+            updateLaporanBulanan();
+            updateManajemenSantri();
+            document.getElementById('tanggal-hari-ini').textContent = new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        function updateLaporanHarian() {
+            laporanHarianBody.innerHTML = '';
+            const today = new Date().toLocaleDateString('id-ID');
+            const todayLogs = attendanceLog.filter(log => new Date(log.time).toLocaleDateString('id-ID') === today);
+
+            if (todayLogs.length > 0) {
+                harianPlaceholder.classList.add('hidden');
+                todayLogs.forEach(log => {
+                    const row = `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap">${log.name}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${log.address}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${new Date(log.time).toLocaleTimeString('id-ID')}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                    Hadir
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                    laporanHarianBody.innerHTML += row;
+                });
+            } else {
+                 laporanHarianBody.innerHTML = `<tr id="harian-placeholder"><td colspan="4" class="px-6 py-4 text-center text-gray-500">Belum ada data absensi hari ini.</td></tr>`;
+            }
+        }
+
+        function updateLaporanBulanan() {
+            laporanBulananBody.innerHTML = '';
+            const monthlySummary = {};
+
+            santriDatabase.forEach(santri => {
+                monthlySummary[santri.name] = 0;
+            });
+
+            const currentMonth = new Date().getMonth();
+            attendanceLog.forEach(log => {
+                if (new Date(log.time).getMonth() === currentMonth) {
+                    if (monthlySummary[log.name] !== undefined) {
+                        monthlySummary[log.name]++;
+                    }
+                }
+            });
+
+            if (Object.keys(monthlySummary).length > 0) {
+                 bulananPlaceholder.classList.add('hidden');
+                for (const name in monthlySummary) {
+                    const row = `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap">${name}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${monthlySummary[name]} kali</td>
+                        </tr>
+                    `;
+                    laporanBulananBody.innerHTML += row;
+                }
+            } else {
+                laporanBulananBody.innerHTML = `<tr id="bulanan-placeholder"><td colspan="2" class="px-6 py-4 text-center text-gray-500">Belum ada data untuk ditampilkan.</td></tr>`;
+            }
+        }
+
+        function updateManajemenSantri() {
+            manajemenSantriBody.innerHTML = '';
+            santriDatabase.forEach(santri => {
+                const row = `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4 whitespace-nowrap">${santri.name}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${santri.address}</td>
+                    </tr>
+                `;
+                manajemenSantriBody.innerHTML += row;
+            });
+        }
+        
+        function openModal() {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            addSantriForm.reset();
+        }
+
+        // === FUNGSI BARU: Tambah Santri ===
+        addSantriForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = e.target.nama.value;
+            const address = e.target.alamat.value;
+            const photoFile = e.target.foto.files[0];
+
+            if (!name || !address || !photoFile) {
+                showToast("Semua field harus diisi.", "error");
+                return;
+            }
+
+            showToast("Memproses data santri baru...", "info");
+            
+            try {
+                // 1. Buat URL lokal untuk gambar yang diupload
+                const imageUrl = URL.createObjectURL(photoFile);
+
+                // 2. Proses gambar untuk mendapatkan face descriptor
+                const img = await faceapi.fetchImage(imageUrl);
+                const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+
+                if (!detection) {
+                    showToast("Wajah tidak terdeteksi di foto. Coba foto lain.", "error");
+                    return;
+                }
+
+                // 3. Buat LabeledFaceDescriptors baru
+                const newDescriptor = new faceapi.LabeledFaceDescriptors(name, [detection.descriptor]);
+                labeledFaceDescriptors.push(newDescriptor);
+
+                // 4. Update faceMatcher dengan data baru
+                faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.55);
+
+                // 5. Tambahkan santri ke database simulasi
+                santriDatabase.push({ name, address, imageUrls: [imageUrl] });
+
+                // 6. Update UI
+                updateAdminTables();
+                closeModal();
+                showToast("Santri baru berhasil ditambahkan!", "success");
+
+            } catch (error) {
+                console.error("Gagal menambah santri:", error);
+                showToast("Terjadi kesalahan saat menambah santri.", "error");
+            }
+        });
+        
+        function showToast(message, type = 'info') {
+            toast.textContent = message;
+            toast.className = 'toast show'; // reset classes
+            if (type === 'success') {
+                toast.style.backgroundColor = '#28a745';
+            } else if (type === 'error') {
+                toast.style.backgroundColor = '#dc3545';
+            } else {
+                toast.style.backgroundColor = '#333';
+            }
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
+        }
+
+        // Jalankan aplikasi
+        initialize();
+
+    </script>
+</body>
+</html>
